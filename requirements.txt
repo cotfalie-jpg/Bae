@@ -1,8 +1,5 @@
 streamlit
-speechrecognition
 gtts
-pydub
 openai
-numpy
-Pillow
+pydub
 ffmpeg-python

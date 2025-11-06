@@ -1,9 +1,8 @@
 streamlit
-pyaudio
 speechrecognition
 gtts
 pydub
-ffmpeg-python
 openai
 numpy
 Pillow
+ffmpeg-python

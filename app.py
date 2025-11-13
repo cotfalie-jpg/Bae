@@ -1,159 +1,175 @@
 import streamlit as st
 import paho.mqtt.client as mqtt
 import json
-import os
-import pathlib
+import time
 
 # -------------------------------
 # CONFIGURACIÓN DE LA PÁGINA
 # -------------------------------
-st.set_page_config(page_title="BAE - Monitor del Bebé", page_icon="👶", layout="centered")
-
-# Directorio base (para imágenes locales)
-BASE_DIR = pathlib.Path(__file__).parent.resolve()
+st.set_page_config(
+    page_title="👶 BAE - Lector de Sensor MQTT",
+    page_icon="👶",
+    layout="centered"
+)
 
 # -------------------------------
-# ESTILO VISUAL PASTEL BAE
+# ESTILO VISUAL - BAE
 # -------------------------------
 st.markdown("""
 <style>
+/* Fondo general con tonos BAE */
 .stApp {
-    background: linear-gradient(135deg, #FFF7E6, #FFEED9, #FFF9F1);
+    background: linear-gradient(135deg, #FFF6E9, #FFEBD2, #FFF9E5);
     font-family: 'Poppins', sans-serif;
 }
+
+/* Títulos principales */
 h1 {
     color: #5C4438;
     text-align: center;
-    font-size: 2.6rem;
-    margin-bottom: 0.3rem;
+    font-weight: 700;
+    font-size: 2.5rem;
 }
-.sub {
-    text-align: center;
-    color: #A67856;
-    font-size: 1.1rem;
-    margin-bottom: 2rem;
+
+/* Subtítulos y texto */
+h2, h3, h4, p, label, span, div {
+    color: #7A5E48 !important;
 }
-.card {
-    background-color: white;
-    border-radius: 25px;
-    padding: 2.5rem;
-    text-align: center;
-    box-shadow: 0px 6px 20px rgba(180,150,120,0.25);
-    transition: all 0.3s ease;
+
+/* Botón principal */
+button[kind="primary"] {
+    background-color: #F9C784 !important;
+    color: #5C4438 !important;
+    font-weight: 600;
+    border-radius: 15px !important;
+    border: none;
 }
-.card:hover {
-    transform: scale(1.02);
+button[kind="primary"]:hover {
+    background-color: #F7B267 !important;
 }
-.baby {
-    border-radius: 20px;
-    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-    animation: float 3s ease-in-out infinite;
+
+/* Tarjetas */
+[data-testid="stMetricValue"] {
+    color: #5C4438 !important;
+    font-weight: bold;
+    font-size: 1.6rem !important;
 }
-@keyframes float {
-    0% { transform: translatey(0px); }
-    50% { transform: translatey(-8px); }
-    100% { transform: translatey(0px); }
+[data-testid="stMetricLabel"] {
+    color: #9B7050 !important;
+    font-weight: 500;
 }
-.footer {
-    text-align: center;
-    color: #8B6B4E;
-    margin-top: 2rem;
+
+/* Expander y cajas */
+.streamlit-expanderHeader {
+    background-color: #FFF0D9 !important;
+    color: #5C4438 !important;
+    border-radius: 10px !important;
+    font-weight: 600;
 }
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown("<h1>👶 BAE - Monitor del Bebé</h1>", unsafe_allow_html=True)
-st.markdown("<p class='sub'>Supervisión ambiental inteligente y visual</p>", unsafe_allow_html=True)
-
 # -------------------------------
 # VARIABLES DE ESTADO
 # -------------------------------
-BROKER = "broker.hivemq.com"
-PORT = 8000  # puerto WebSocket
-TOPIC = "sensor/temperatura"
+if 'sensor_data' not in st.session_state:
+    st.session_state.sensor_data = None
 
-if 'temp' not in st.session_state:
-    st.session_state.temp = 0.0
-if 'hum' not in st.session_state:
-    st.session_state.hum = 0.0
-if 'estado' not in st.session_state:
-    st.session_state.estado = "Esperando datos..."
-if 'conectado' not in st.session_state:
-    st.session_state.conectado = False
-
-# -------------------------------
-# CALLBACKS MQTT
-# -------------------------------
-def on_connect(client, userdata, flags, rc):
-    if rc == 0:
-        st.session_state.conectado = True
-    else:
-        st.session_state.conectado = False
-
-def on_message(client, userdata, msg):
+def get_mqtt_message(broker, port, topic, client_id):
+    """Función para obtener un mensaje MQTT"""
+    message_received = {"received": False, "payload": None}
+    
+    def on_message(client, userdata, message):
+        try:
+            payload = json.loads(message.payload.decode())
+            message_received["payload"] = payload
+            message_received["received"] = True
+        except:
+            message_received["payload"] = message.payload.decode()
+            message_received["received"] = True
+    
     try:
-        data = json.loads(msg.payload.decode())
-        st.session_state.temp = data.get("t", 0.0)
-        st.session_state.hum = data.get("h", 0.0)
+        client = mqtt.Client(client_id=client_id)
+        client.on_message = on_message
+        client.connect(broker, port, 60)
+        client.subscribe(topic)
+        client.loop_start()
+        
+        timeout = time.time() + 5
+        while not message_received["received"] and time.time() < timeout:
+            time.sleep(0.1)
+        
+        client.loop_stop()
+        client.disconnect()
+        
+        return message_received["payload"]
+    
     except Exception as e:
-        print("Error al procesar mensaje:", e)
+        return {"error": str(e)}
 
 # -------------------------------
-# CONEXIÓN MQTT
+# SIDEBAR - CONFIGURACIÓN
 # -------------------------------
-try:
-    mqtt_client = mqtt.Client(transport="websockets")
-    mqtt_client.on_connect = on_connect
-    mqtt_client.on_message = on_message
-    mqtt_client.connect(BROKER, PORT, 60)
-    mqtt_client.subscribe(TOPIC)
-    mqtt_client.loop_start()
-except Exception as e:
-    st.error(f"❌ No se pudo conectar al broker MQTT (WebSocket).<br>{e}", unsafe_allow_html=True)
+with st.sidebar:
+    st.image("logo_bae.png", width=150)
+    st.markdown("### ⚙️ Configuración de Conexión")
+    
+    broker = st.text_input('Broker MQTT', value='broker.mqttdashboard.com', 
+                           help='Dirección del broker MQTT')
+    
+    port = st.number_input('Puerto', value=1883, min_value=1, max_value=65535,
+                           help='Puerto del broker (generalmente 1883)')
+    
+    topic = st.text_input('Tópico', value='Sensor/THP2',
+                          help='Tópico MQTT a suscribirse')
+    
+    client_id = st.text_input('ID del Cliente', value='streamlit_client',
+                              help='Identificador único para esta conexión')
 
 # -------------------------------
-# VISUALIZACIÓN
+# TÍTULO PRINCIPAL
 # -------------------------------
-temp = st.session_state.temp
-hum = st.session_state.hum
-
-# Selección de color e imagen según temperatura
-if temp < 18:
-    estado = "🥶 El cuarto está demasiado frío"
-    color = "#D4ECFF"
-    img_name = "bebeFrio.png"
-elif temp > 28:
-    estado = "🥵 El cuarto está demasiado caliente"
-    color = "#FFE0B3"
-    img_name = "bebeCalor.png"
-else:
-    estado = "😊 Temperatura estable"
-    color = "#E6FFD9"
-    img_name = "bebeFeliz.png"
-
-# Ruta de imagen local
-img_path = BASE_DIR / img_name
-if os.path.exists(img_path):
-    img_display = str(img_path)
-else:
-    st.warning(f"⚠️ No se encontró la imagen: {img_name}")
-    img_display = None
+st.markdown("<h1>👶 BAE - Monitor Ambiental</h1>", unsafe_allow_html=True)
+st.markdown("<p style='text-align:center;color:#A67856;'>Supervisión de temperatura y humedad en tiempo real</p>", unsafe_allow_html=True)
+st.divider()
 
 # -------------------------------
-# TARJETA PRINCIPAL
+# BOTÓN PARA OBTENER DATOS
 # -------------------------------
-st.markdown(f"<div class='card' style='background:{color};'>", unsafe_allow_html=True)
-if img_display:
-    st.image(img_display, width=230)
-st.markdown(f"""
-<h2 style="color:#5C4438;">{temp:.1f} °C</h2>
-<p style="font-size:1.2rem; color:#5C4438;">Humedad: {hum:.1f}%</p>
-<p style="font-weight:600; color:#5C4438;">{estado}</p>
-""", unsafe_allow_html=True)
-st.markdown("</div>", unsafe_allow_html=True)
+if st.button('🔄 Obtener Datos del Sensor', use_container_width=True):
+    with st.spinner('Conectando al broker y esperando datos...'):
+        sensor_data = get_mqtt_message(broker, int(port), topic, client_id)
+        st.session_state.sensor_data = sensor_data
+
+# -------------------------------
+# MOSTRAR RESULTADOS
+# -------------------------------
+if st.session_state.sensor_data:
+    st.divider()
+    st.subheader('📊 Datos Recibidos')
+    
+    data = st.session_state.sensor_data
+    
+    if isinstance(data, dict) and 'error' in data:
+        st.error(f"❌ Error de conexión: {data['error']}")
+    else:
+        st.success('✅ Datos recibidos correctamente')
+        
+        if isinstance(data, dict):
+            # Mostrar temperatura y humedad con estilo BAE
+            cols = st.columns(len(data))
+            for i, (key, value) in enumerate(data.items()):
+                with cols[i]:
+                    st.metric(label=key.capitalize(), value=f"{value} {'°C' if key.startswith('t') else '%'}")
+            
+            with st.expander('📋 Ver JSON completo'):
+                st.json(data)
+        else:
+            st.code(data)
 
 # -------------------------------
 # PIE DE PÁGINA
 # -------------------------------
-st.markdown("<p class='footer'>💛 Proyecto BAE - Interfaces Multimodales 2025</p>", unsafe_allow_html=True)
+st.markdown("<br><p style='text-align:center;color:#8B6B4E;'>💛 Proyecto BAE - Interfaces Multimodales 2025</p>", unsafe_allow_html=True)
+
 

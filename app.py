@@ -1,30 +1,22 @@
 import streamlit as st
-import paho.mqtt.client as mqtt
 import json
-import time
-import tempfile
-import sounddevice as sd
-import wavio
+import paho.mqtt.client as mqtt
 from gtts import gTTS
 from openai import OpenAI
+from bokeh.models import Button, CustomJS
+from streamlit_bokeh_events import streamlit_bokeh_events
+import tempfile
 
-# =======================
-# CONFIGURACIÓN DE PÁGINA
-# =======================
-st.set_page_config(
-    page_title="BAE - Cuarto del Bebé 💡🐻",
-    page_icon="🌼",
-    layout="centered"
-)
+# ===============================
+# CONFIGURACIÓN DE PÁGINA Y ESTILO
+# ===============================
+st.set_page_config(page_title="BAE - Cuarto del Bebé 💛", layout="centered", page_icon="🍼")
 
-# =======================
-# ESTILO VISUAL PASTEL
-# =======================
 st.markdown("""
 <style>
 body {
-    background: linear-gradient(135deg, #fff9e6, #fdf3e7, #e8f8f5);
-    font-family: "Poppins", sans-serif;
+    background: linear-gradient(135deg, #fff7cc, #ffe8d6, #e7f6f2);
+    font-family: 'Poppins', sans-serif;
 }
 h1 {
     text-align: center;
@@ -32,6 +24,7 @@ h1 {
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     font-weight: 800;
+    margin-bottom: 0.2rem;
 }
 .subtitle {
     text-align: center;
@@ -82,15 +75,15 @@ h1 {
 </style>
 """, unsafe_allow_html=True)
 
-# =======================
+# ===============================
 # ENCABEZADO
-# =======================
-st.markdown("<h1>🌼 BAE - Cuarto del Bebé</h1>", unsafe_allow_html=True)
-st.markdown('<div class="subtitle">Controla la luz y conoce el clima del bebé con tu voz 💛</div>', unsafe_allow_html=True)
+# ===============================
+st.markdown("<h1>🍼 BAE - Cuarto del Bebé</h1>", unsafe_allow_html=True)
+st.markdown('<div class="subtitle">Habla con BAE, controla la luz y conoce el clima del bebé 💛</div>', unsafe_allow_html=True)
 
-# =======================
-# MQTT CONFIG
-# =======================
+# ===============================
+# MQTT CONFIGURACIÓN
+# ===============================
 broker = "test.mosquitto.org"
 topic_sensor = "sensor/temperatura"
 topic_luz = "cuarto/luz"
@@ -110,78 +103,86 @@ mqtt_client.connect(broker, 1883, 60)
 mqtt_client.subscribe(topic_sensor)
 mqtt_client.loop_start()
 
-# =======================
-# CONFIGURAR OPENAI
-# =======================
+# ===============================
+# API KEY
+# ===============================
 api_key = st.text_input("🔑 Clave de OpenAI:", type="password")
 if not api_key:
-    st.warning("Ingresa tu clave de OpenAI para usar la voz.")
+    st.warning("Por favor ingresa tu clave de OpenAI para usar BAE 🌼")
     st.stop()
 client = OpenAI(api_key=api_key)
 
-# =======================
-# GRABACIÓN DE VOZ
-# =======================
-duration = 4
-fs = 44100
+# ===============================
+# BOTÓN DE VOZ (micrófono navegador)
+# ===============================
 st.markdown('<div style="text-align:center;">', unsafe_allow_html=True)
 
-if st.button("🎤 Hablar con BAE"):
-    st.info("🎙️ Grabando 4 segundos...")
-    rec = sd.rec(int(duration * fs), samplerate=fs, channels=1, dtype='int16')
-    sd.wait()
+stt_button = Button(label="🎤 Hablar con BAE", width=300, height=60)
+stt_button.js_on_event("button_click", CustomJS(code="""
+    var recognition = new webkitSpeechRecognition();
+    recognition.continuous = false;
+    recognition.lang = 'es-ES';
+    recognition.onresult = function (e) {
+        var text = e.results[0][0].transcript;
+        document.dispatchEvent(new CustomEvent("GET_TEXT", {detail: text}));
+    }
+    recognition.start();
+"""))
 
-    temp_wav = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
-    wavio.write(temp_wav.name, rec, fs, sampwidth=2)
-
-    with st.spinner("🎧 Escuchando..."):
-        audio_file = open(temp_wav.name, "rb")
-        transcript = client.audio.transcriptions.create(
-            model="gpt-4o-mini-transcribe",
-            file=audio_file
-        )
-        user_text = transcript.text.strip()
-        st.success(f"🗣️ Dijiste: {user_text}")
-
-        # =======================
-        # INTERPRETAR COMANDO
-        # =======================
-        if "luz" in user_text.lower() and "enciende" in user_text.lower():
-            mqtt_client.publish(topic_luz, json.dumps({"estado": "encendida"}))
-            answer = "Encendiendo la luz del cuarto del bebé 💡✨"
-        elif "luz" in user_text.lower() and "apaga" in user_text.lower():
-            mqtt_client.publish(topic_luz, json.dumps({"estado": "apagada"}))
-            answer = "Apagando la luz del bebé 🌙"
-        elif "temperatura" in user_text.lower() or "clima" in user_text.lower():
-            t = last_data.get("t")
-            if t is None:
-                answer = "No logro leer la temperatura aún, inténtalo de nuevo en un momento 🌼"
-            elif t < 18:
-                answer = f"La habitación está fría, unos {t:.1f} grados ❄️. Vamos a abrigar al bebé 🧣"
-            elif t > 28:
-                answer = f"Está calientita la habitación, unos {t:.1f} grados ☀️. Cuidemos que no tenga calor."
-            else:
-                answer = f"La temperatura es perfecta, unos {t:.1f} grados 🌤️. El bebé está cómodo 💛"
-        else:
-            answer = "No entendí muy bien, ¿puedes repetirlo con calma, por favor? 💬"
-
-        # Respuesta hablada
-        tts = gTTS(answer, lang="es")
-        tts.save("respuesta.mp3")
-
-        st.markdown(f'<div class="card">{answer}</div>', unsafe_allow_html=True)
-        st.audio("respuesta.mp3")
+result = streamlit_bokeh_events(
+    stt_button,
+    events="GET_TEXT",
+    key="listen",
+    refresh_on_update=False,
+    override_height=70,
+    debounce_time=0
+)
 
 st.markdown('</div>', unsafe_allow_html=True)
 
-# =======================
-# VISUALIZACIÓN SENSOR
-# =======================
+# ===============================
+# PROCESAR COMANDO DE VOZ
+# ===============================
+if result and "GET_TEXT" in result:
+    user_text = result["GET_TEXT"]
+    st.markdown(f"### 🗣️ Dijiste: *{user_text}*")
+
+    # Interpretar el comando
+    if "enciende" in user_text.lower() and "luz" in user_text.lower():
+        mqtt_client.publish(topic_luz, json.dumps({"estado": "encendida"}))
+        answer = "Encendiendo la luz del cuarto del bebé 💡✨"
+    elif "apaga" in user_text.lower() and "luz" in user_text.lower():
+        mqtt_client.publish(topic_luz, json.dumps({"estado": "apagada"}))
+        answer = "Apagando la luz del bebé 🌙"
+    elif "temperatura" in user_text.lower() or "clima" in user_text.lower():
+        t = last_data.get("t")
+        if t is None:
+            answer = "Aún no recibo datos del sensor, inténtalo otra vez en unos segundos 💛"
+        elif t < 18:
+            answer = f"El cuarto está fresquito, unos {t:.1f} grados ❄️"
+        elif t > 28:
+            answer = f"Está calientito, unos {t:.1f} grados ☀️"
+        else:
+            answer = f"Perfecto, el bebé está cómodo con {t:.1f} grados 🌼"
+    else:
+        answer = "No entendí muy bien, ¿puedes repetirlo con calma por favor? 💬"
+
+    # Generar respuesta con voz
+    tts = gTTS(answer, lang="es")
+    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
+    tts.save(temp_file.name)
+
+    st.markdown(f'<div class="card">{answer}</div>', unsafe_allow_html=True)
+    st.audio(temp_file.name)
+
+# ===============================
+# VISUALIZACIÓN DEL SENSOR
+# ===============================
 st.markdown("### 🌡️ Estado del cuarto del bebé")
+
 if last_data["t"] is not None:
     t = last_data["t"]
     h = last_data["h"]
-
     col1, col2 = st.columns(2)
     col1.metric("Temperatura", f"{t:.1f} °C")
     col2.metric("Humedad", f"{h:.1f} %")
@@ -193,15 +194,11 @@ if last_data["t"] is not None:
     else:
         st.image("https://i.imgur.com/8bFkCe3.png", caption="😊 Bebé feliz")
 else:
-    st.info("Esperando datos del sensor Wokwi...")
+    st.info("Esperando datos del sensor desde Wokwi...")
 
-# =======================
-# PIE
-# =======================
 st.markdown("""
 <hr style="border:1px solid #ffe082;">
 <div style="text-align:center; color:#888;">
-🌸 BAE - Cuarto del Bebé | Luz, voz y clima inteligente 💛
+🌸 BAE - Luz, voz y clima del bebé 🍼💛
 </div>
 """, unsafe_allow_html=True)
-

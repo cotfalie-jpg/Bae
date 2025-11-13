@@ -1,204 +1,163 @@
 import streamlit as st
-import json
 import paho.mqtt.client as mqtt
-from gtts import gTTS
-from openai import OpenAI
-from bokeh.models import Button, CustomJS
-from streamlit_bokeh_events import streamlit_bokeh_events
-import tempfile
+import json
+import time
+from PIL import Image
 
-# ===============================
-# CONFIGURACIÓN DE PÁGINA Y ESTILO
-# ===============================
-st.set_page_config(page_title="BAE - Cuarto del Bebé 💛", layout="centered", page_icon="🍼")
+# =============================
+# CONFIGURACIÓN GENERAL
+# =============================
+st.set_page_config(page_title="BAE - Baby Monitor", page_icon="👶", layout="centered")
 
-st.markdown("""
+# Paleta de colores BAE (pasteles)
+COLOR_FONDO = "#FFF8E7"
+COLOR_MENTA = "#C8E4D8"
+COLOR_DURAZNO = "#FFD7B5"
+COLOR_AZUL = "#CDE5FF"
+COLOR_TEXTO = "#4D797A"
+
+# =============================
+# ESTILOS CSS
+# =============================
+st.markdown(f"""
 <style>
-body {
-    background: linear-gradient(135deg, #fff7cc, #ffe8d6, #e7f6f2);
-    font-family: 'Poppins', sans-serif;
-}
-h1 {
-    text-align: center;
-    background: linear-gradient(90deg, #ffd54f, #ffcc80, #ffe082);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    font-weight: 800;
-    margin-bottom: 0.2rem;
-}
-.subtitle {
-    text-align: center;
-    color: #666;
-    margin-bottom: 2rem;
-    font-size: 1.2rem;
-}
-.mic-button {
-    background: linear-gradient(145deg, #fff59d, #ffe082);
-    color: #444;
-    border: none;
-    border-radius: 50%;
-    width: 120px;
-    height: 120px;
-    font-size: 3rem;
-    margin: 1.5rem auto;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.15);
-    transition: all 0.3s ease;
-    animation: pulse 2s infinite;
-}
-.mic-button:hover {
-    transform: scale(1.05);
-    box-shadow: 0 12px 35px rgba(255, 235, 59, 0.3);
-}
-@keyframes pulse {
-  0% { transform: scale(1); }
-  50% { transform: scale(1.05); }
-  100% { transform: scale(1); }
-}
-.card {
-    background: #ffffff;
-    border: 2px solid #ffe082;
-    border-radius: 20px;
-    padding: 1.5rem;
-    margin-top: 1rem;
-    box-shadow: 0 5px 15px rgba(0,0,0,0.08);
-    text-align: center;
-    animation: fadeInUp 1s ease;
-}
-@keyframes fadeInUp {
-  from {opacity: 0; transform: translateY(10px);}
-  to {opacity: 1; transform: translateY(0);}
-}
+    body {{
+        background-color: {COLOR_FONDO};
+        font-family: 'Poppins', sans-serif;
+    }}
+    .main-title {{
+        text-align: center;
+        color: {COLOR_TEXTO};
+        font-size: 2.5rem;
+        font-weight: 700;
+        animation: fadeIn 1.5s ease;
+    }}
+    .status-box {{
+        background: linear-gradient(145deg, {COLOR_MENTA}, {COLOR_AZUL});
+        border-radius: 25px;
+        padding: 30px;
+        text-align: center;
+        box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        transition: all 0.4s ease;
+        animation: floaty 3s ease-in-out infinite;
+    }}
+    .temp {{
+        font-size: 3rem;
+        font-weight: 700;
+        color: {COLOR_TEXTO};
+    }}
+    .estado {{
+        font-size: 1.3rem;
+        color: {COLOR_TEXTO};
+        margin-top: 10px;
+    }}
+    @keyframes fadeIn {{
+        from {{ opacity: 0; transform: translateY(-10px); }}
+        to {{ opacity: 1; transform: translateY(0); }}
+    }}
+    @keyframes floaty {{
+        0% {{ transform: translateY(0px); }}
+        50% {{ transform: translateY(-8px); }}
+        100% {{ transform: translateY(0px); }}
+    }}
+    .footer {{
+        text-align: center;
+        color: #777;
+        margin-top: 20px;
+        font-size: 0.9rem;
+    }}
 </style>
 """, unsafe_allow_html=True)
 
-# ===============================
-# ENCABEZADO
-# ===============================
-st.markdown("<h1>🍼 BAE - Cuarto del Bebé</h1>", unsafe_allow_html=True)
-st.markdown('<div class="subtitle">Habla con BAE, controla la luz y conoce el clima del bebé 💛</div>', unsafe_allow_html=True)
+# =============================
+# CABECERA
+# =============================
+st.markdown("<h1 class='main-title'>👶 BAE - Monitor del Bebé</h1>", unsafe_allow_html=True)
+st.markdown("<p style='text-align:center;color:#6A6A6A;'>Supervisión ambiental inteligente y visual</p>", unsafe_allow_html=True)
 
-# ===============================
-# MQTT CONFIGURACIÓN
-# ===============================
+# =============================
+# CONFIGURAR MQTT WEBSOCKET
+# =============================
 broker = "test.mosquitto.org"
-topic_sensor = "sensor/temperatura"
-topic_luz = "cuarto/luz"
-last_data = {"t": None, "h": None}
+topic = "sensor/temperatura"
+
+if "mqtt_data" not in st.session_state:
+    st.session_state.mqtt_data = {"t": 0, "h": 0}
 
 def on_message(client, userdata, message):
-    global last_data
+    """Recibir datos del sensor vía MQTT"""
     try:
         payload = json.loads(message.payload.decode())
-        last_data = payload
+        st.session_state.mqtt_data = payload
     except:
         pass
 
-mqtt_client = mqtt.Client()
+mqtt_client = mqtt.Client(transport="websockets")
 mqtt_client.on_message = on_message
-mqtt_client.connect(broker, 1883, 60)
-mqtt_client.subscribe(topic_sensor)
-mqtt_client.loop_start()
 
-# ===============================
-# API KEY
-# ===============================
-api_key = st.text_input("🔑 Clave de OpenAI:", type="password")
-if not api_key:
-    st.warning("Por favor ingresa tu clave de OpenAI para usar BAE 🌼")
-    st.stop()
-client = OpenAI(api_key=api_key)
+try:
+    mqtt_client.ws_set_options(path="/mqtt")
+    mqtt_client.connect(broker, 8081, 60)
+    mqtt_client.subscribe(topic)
+    mqtt_client.loop_start()
+except Exception as e:
+    st.error("❌ No se pudo conectar al broker MQTT (WebSocket).")
+    st.text(str(e))
 
-# ===============================
-# BOTÓN DE VOZ (micrófono navegador)
-# ===============================
-st.markdown('<div style="text-align:center;">', unsafe_allow_html=True)
+# =============================
+# INTERFAZ PRINCIPAL
+# =============================
+placeholder = st.empty()
 
-stt_button = Button(label="🎤 Hablar con BAE", width=300, height=60)
-stt_button.js_on_event("button_click", CustomJS(code="""
-    var recognition = new webkitSpeechRecognition();
-    recognition.continuous = false;
-    recognition.lang = 'es-ES';
-    recognition.onresult = function (e) {
-        var text = e.results[0][0].transcript;
-        document.dispatchEvent(new CustomEvent("GET_TEXT", {detail: text}));
-    }
-    recognition.start();
-"""))
+while True:
+    data = st.session_state.mqtt_data
+    temp = data.get("t", 0)
+    hum = data.get("h", 0)
 
-result = streamlit_bokeh_events(
-    stt_button,
-    events="GET_TEXT",
-    key="listen",
-    refresh_on_update=False,
-    override_height=70,
-    debounce_time=0
-)
-
-st.markdown('</div>', unsafe_allow_html=True)
-
-# ===============================
-# PROCESAR COMANDO DE VOZ
-# ===============================
-if result and "GET_TEXT" in result:
-    user_text = result["GET_TEXT"]
-    st.markdown(f"### 🗣️ Dijiste: *{user_text}*")
-
-    # Interpretar el comando
-    if "enciende" in user_text.lower() and "luz" in user_text.lower():
-        mqtt_client.publish(topic_luz, json.dumps({"estado": "encendida"}))
-        answer = "Encendiendo la luz del cuarto del bebé 💡✨"
-    elif "apaga" in user_text.lower() and "luz" in user_text.lower():
-        mqtt_client.publish(topic_luz, json.dumps({"estado": "apagada"}))
-        answer = "Apagando la luz del bebé 🌙"
-    elif "temperatura" in user_text.lower() or "clima" in user_text.lower():
-        t = last_data.get("t")
-        if t is None:
-            answer = "Aún no recibo datos del sensor, inténtalo otra vez en unos segundos 💛"
-        elif t < 18:
-            answer = f"El cuarto está fresquito, unos {t:.1f} grados ❄️"
-        elif t > 28:
-            answer = f"Está calientito, unos {t:.1f} grados ☀️"
-        else:
-            answer = f"Perfecto, el bebé está cómodo con {t:.1f} grados 🌼"
+    # Determinar estado
+    if temp < 18:
+        estado = "El cuarto está muy frío ❄️"
+        color = COLOR_AZUL
+        img = "https://i.ibb.co/fXxB4n1/bebe-frio.png"
+    elif temp > 28:
+        estado = "El cuarto está muy caliente ☀️"
+        color = COLOR_DURAZNO
+        img = "https://i.ibb.co/nRyYbJn/bebe-calor.png"
     else:
-        answer = "No entendí muy bien, ¿puedes repetirlo con calma por favor? 💬"
+        estado = "El ambiente está perfecto 🌤️"
+        color = COLOR_MENTA
+        img = "https://i.ibb.co/n7VnLVG/bebe-feliz.png"
 
-    # Generar respuesta con voz
-    tts = gTTS(answer, lang="es")
-    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
-    tts.save(temp_file.name)
+    with placeholder.container():
+        st.markdown(f"""
+        <div class="status-box" style="background:linear-gradient(145deg, {color}, {COLOR_FONDO});">
+            <img src="{img}" width="250" style="border-radius:20px; margin-bottom:10px;">
+            <div class="temp">{temp:.1f} °C</div>
+            <div class="estado">{estado}</div>
+            <p style="color:#777; font-size:1rem;">Humedad: {hum:.1f}%</p>
+        </div>
+        """, unsafe_allow_html=True)
 
-    st.markdown(f'<div class="card">{answer}</div>', unsafe_allow_html=True)
-    st.audio(temp_file.name)
+        # Botón para prender luz por voz (futuro)
+        st.markdown("""
+        <div style="text-align:center; margin-top:1rem;">
+            <button style="
+                background-color:#FFD7B5;
+                border:none;
+                color:#4D797A;
+                font-size:1.2rem;
+                padding:10px 25px;
+                border-radius:15px;
+                cursor:pointer;
+                box-shadow:0 3px 8px rgba(0,0,0,0.2);
+                transition: all 0.3s ease;"
+                onmouseover="this.style.transform='scale(1.05)';"
+                onmouseout="this.style.transform='scale(1)';">
+                💡 Encender luz del bebé
+            </button>
+        </div>
+        """, unsafe_allow_html=True)
 
-# ===============================
-# VISUALIZACIÓN DEL SENSOR
-# ===============================
-st.markdown("### 🌡️ Estado del cuarto del bebé")
+        st.markdown("<div class='footer'>💛 BAE - Baby Adaptive Environment</div>", unsafe_allow_html=True)
 
-if last_data["t"] is not None:
-    t = last_data["t"]
-    h = last_data["h"]
-    col1, col2 = st.columns(2)
-    col1.metric("Temperatura", f"{t:.1f} °C")
-    col2.metric("Humedad", f"{h:.1f} %")
-
-    if t < 18:
-        st.image("https://i.imgur.com/YxA4HqL.png", caption="🥶 Bebé con frío")
-    elif t > 28:
-        st.image("https://i.imgur.com/ZsNw0q2.png", caption="🥵 Bebé con calor")
-    else:
-        st.image("https://i.imgur.com/8bFkCe3.png", caption="😊 Bebé feliz")
-else:
-    st.info("Esperando datos del sensor desde Wokwi...")
-
-st.markdown("""
-<hr style="border:1px solid #ffe082;">
-<div style="text-align:center; color:#888;">
-🌸 BAE - Luz, voz y clima del bebé 🍼💛
-</div>
-""", unsafe_allow_html=True)
+    time.sleep(5)

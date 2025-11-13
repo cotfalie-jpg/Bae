@@ -1,6 +1,2 @@
 streamlit
 paho-mqtt
-gtts
-openai
-bokeh
-streamlit-bokeh-events

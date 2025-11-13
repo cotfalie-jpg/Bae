@@ -127,4 +127,3 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 st.markdown("<br><p style='text-align:center;color:#8B6B4E;'>💛 Proyecto BAE - Interfaces Multimodales 2025</p>", unsafe_allow_html=True)
-

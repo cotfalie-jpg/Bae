@@ -1,6 +1,6 @@
 streamlit
-sounddevice
-wavio
 paho-mqtt
-openai
 gtts
+openai
+bokeh
+streamlit-bokeh-events

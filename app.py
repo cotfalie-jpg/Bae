@@ -2,22 +2,23 @@ import streamlit as st
 import paho.mqtt.client as mqtt
 import json
 import time
+import base64
 from PIL import Image
 
 # =============================
-# CONFIGURACIÓN GENERAL
+# CONFIGURACIÓN
 # =============================
 st.set_page_config(page_title="BAE - Baby Monitor", page_icon="👶", layout="centered")
 
-# Paleta de colores BAE (pasteles)
+# Paleta de colores pastel
 COLOR_FONDO = "#FFF8E7"
-COLOR_MENTA = "#C8E4D8"
 COLOR_DURAZNO = "#FFD7B5"
 COLOR_AZUL = "#CDE5FF"
+COLOR_VERDE = "#C8E4D8"
 COLOR_TEXTO = "#4D797A"
 
 # =============================
-# ESTILOS CSS
+# ESTILOS VISUALES
 # =============================
 st.markdown(f"""
 <style>
@@ -25,20 +26,20 @@ st.markdown(f"""
         background-color: {COLOR_FONDO};
         font-family: 'Poppins', sans-serif;
     }}
-    .main-title {{
+    .header {{
         text-align: center;
         color: {COLOR_TEXTO};
         font-size: 2.5rem;
         font-weight: 700;
+        margin-bottom: 0.5rem;
         animation: fadeIn 1.5s ease;
     }}
     .status-box {{
-        background: linear-gradient(145deg, {COLOR_MENTA}, {COLOR_AZUL});
+        background: linear-gradient(145deg, {COLOR_VERDE}, {COLOR_AZUL});
         border-radius: 25px;
-        padding: 30px;
+        padding: 25px;
         text-align: center;
         box-shadow: 0 5px 15px rgba(0,0,0,0.1);
-        transition: all 0.4s ease;
         animation: floaty 3s ease-in-out infinite;
     }}
     .temp {{
@@ -57,26 +58,25 @@ st.markdown(f"""
     }}
     @keyframes floaty {{
         0% {{ transform: translateY(0px); }}
-        50% {{ transform: translateY(-8px); }}
+        50% {{ transform: translateY(-6px); }}
         100% {{ transform: translateY(0px); }}
-    }}
-    .footer {{
-        text-align: center;
-        color: #777;
-        margin-top: 20px;
-        font-size: 0.9rem;
     }}
 </style>
 """, unsafe_allow_html=True)
 
 # =============================
-# CABECERA
+# ENCABEZADO
 # =============================
-st.markdown("<h1 class='main-title'>👶 BAE - Monitor del Bebé</h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align:center;color:#6A6A6A;'>Supervisión ambiental inteligente y visual</p>", unsafe_allow_html=True)
+col1, col2 = st.columns([1, 5])
+with col1:
+    st.image("logo_bae.png", width=70)
+with col2:
+    st.markdown("<div class='header'>BAE - Monitor del Bebé</div>", unsafe_allow_html=True)
+
+st.markdown("<p style='text-align:center;color:#777;'>Supervisión ambiental inteligente con colores pastel 💛</p>", unsafe_allow_html=True)
 
 # =============================
-# CONFIGURAR MQTT WEBSOCKET
+# MQTT CONFIG
 # =============================
 broker = "test.mosquitto.org"
 topic = "sensor/temperatura"
@@ -85,7 +85,6 @@ if "mqtt_data" not in st.session_state:
     st.session_state.mqtt_data = {"t": 0, "h": 0}
 
 def on_message(client, userdata, message):
-    """Recibir datos del sensor vía MQTT"""
     try:
         payload = json.loads(message.payload.decode())
         st.session_state.mqtt_data = payload
@@ -105,6 +104,20 @@ except Exception as e:
     st.text(str(e))
 
 # =============================
+# FUNCIÓN AUDIO BASE64
+# =============================
+def autoplay_audio(file_path):
+    with open(file_path, "rb") as f:
+        audio_bytes = f.read()
+    base64_audio = base64.b64encode(audio_bytes).decode()
+    audio_html = f"""
+        <audio autoplay>
+        <source src="data:audio/wav;base64,{base64_audio}" type="audio/wav">
+        </audio>
+    """
+    st.markdown(audio_html, unsafe_allow_html=True)
+
+# =============================
 # INTERFAZ PRINCIPAL
 # =============================
 placeholder = st.empty()
@@ -118,15 +131,18 @@ while True:
     if temp < 18:
         estado = "El cuarto está muy frío ❄️"
         color = COLOR_AZUL
-        img = "https://i.ibb.co/fXxB4n1/bebe-frio.png"
+        img = "bebeFrio.png"
+        sound = "frio.wav"
     elif temp > 28:
         estado = "El cuarto está muy caliente ☀️"
         color = COLOR_DURAZNO
-        img = "https://i.ibb.co/nRyYbJn/bebe-calor.png"
+        img = "bebeCalor.png"
+        sound = "calor.wav"
     else:
         estado = "El ambiente está perfecto 🌤️"
-        color = COLOR_MENTA
-        img = "https://i.ibb.co/n7VnLVG/bebe-feliz.png"
+        color = COLOR_VERDE
+        img = "bebeFeliz.png"
+        sound = "estable.wav"
 
     with placeholder.container():
         st.markdown(f"""
@@ -138,26 +154,6 @@ while True:
         </div>
         """, unsafe_allow_html=True)
 
-        # Botón para prender luz por voz (futuro)
-        st.markdown("""
-        <div style="text-align:center; margin-top:1rem;">
-            <button style="
-                background-color:#FFD7B5;
-                border:none;
-                color:#4D797A;
-                font-size:1.2rem;
-                padding:10px 25px;
-                border-radius:15px;
-                cursor:pointer;
-                box-shadow:0 3px 8px rgba(0,0,0,0.2);
-                transition: all 0.3s ease;"
-                onmouseover="this.style.transform='scale(1.05)';"
-                onmouseout="this.style.transform='scale(1)';">
-                💡 Encender luz del bebé
-            </button>
-        </div>
-        """, unsafe_allow_html=True)
+        autoplay_audio(sound)
+        time.sleep(6)
 
-        st.markdown("<div class='footer'>💛 BAE - Baby Adaptive Environment</div>", unsafe_allow_html=True)
-
-    time.sleep(5)

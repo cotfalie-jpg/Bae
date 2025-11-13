@@ -1,5 +1,6 @@
 streamlit
-gtts
+sounddevice
+wavio
+paho-mqtt
 openai
-pydub
-ffmpeg-python
+gtts

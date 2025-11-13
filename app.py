@@ -120,10 +120,10 @@ with st.sidebar:
     port = st.number_input('Puerto', value=1883, min_value=1, max_value=65535,
                            help='Puerto del broker (generalmente 1883)')
     
-    topic = st.text_input('Tópico', value='Sensor/THP2',
+    topic = st.text_input('Tópico', value='bae',
                           help='Tópico MQTT a suscribirse')
     
-    client_id = st.text_input('ID del Cliente', value='streamlit_client',
+    client_id = st.text_input('ID del Cliente', value='baeapp',
                               help='Identificador único para esta conexión')
 
 # -------------------------------

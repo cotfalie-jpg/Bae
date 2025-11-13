@@ -2,82 +2,83 @@ import streamlit as st
 import paho.mqtt.client as mqtt
 import json
 import time
-import base64
 from PIL import Image
+import base64
+from gtts import gTTS
+import io
 
-# =============================
-# CONFIGURACIÓN
-# =============================
-st.set_page_config(page_title="BAE - Baby Monitor", page_icon="👶", layout="centered")
+# -----------------------------
+# CONFIGURACIÓN DE PÁGINA
+# -----------------------------
+st.set_page_config(
+    page_title="BAE - Monitor del Bebé",
+    page_icon="🍼",
+    layout="centered"
+)
 
-# Paleta de colores pastel
-COLOR_FONDO = "#FFF8E7"
-COLOR_DURAZNO = "#FFD7B5"
-COLOR_AZUL = "#CDE5FF"
-COLOR_VERDE = "#C8E4D8"
-COLOR_TEXTO = "#4D797A"
-
-# =============================
-# ESTILOS VISUALES
-# =============================
-st.markdown(f"""
+# -----------------------------
+# ESTILOS PASTEL BAE
+# -----------------------------
+st.markdown("""
 <style>
-    body {{
-        background-color: {COLOR_FONDO};
-        font-family: 'Poppins', sans-serif;
-    }}
-    .header {{
+    body {
+        background: linear-gradient(180deg, #FFF8EA 0%, #FFF2C3 100%);
+    }
+    .title-bae {
+        font-size: 2.8rem;
+        font-weight: 800;
+        color: #DD8E6B;
         text-align: center;
-        color: {COLOR_TEXTO};
+        margin-bottom: 0.2rem;
+        animation: fadeIn 2s ease;
+    }
+    .subtitle-bae {
+        font-size: 1.2rem;
+        text-align: center;
+        color: #6E5849;
+        margin-bottom: 1.5rem;
+        opacity: 0.8;
+    }
+    .card {
+        background: #FFF8EA;
+        border-radius: 20px;
+        box-shadow: 0px 4px 20px rgba(221, 142, 107, 0.2);
+        padding: 2rem;
+        text-align: center;
+        animation: float 6s ease-in-out infinite;
+    }
+    .metric {
         font-size: 2.5rem;
+        color: #6E5849;
         font-weight: 700;
-        margin-bottom: 0.5rem;
-        animation: fadeIn 1.5s ease;
-    }}
-    .status-box {{
-        background: linear-gradient(145deg, {COLOR_VERDE}, {COLOR_AZUL});
-        border-radius: 25px;
-        padding: 25px;
-        text-align: center;
-        box-shadow: 0 5px 15px rgba(0,0,0,0.1);
-        animation: floaty 3s ease-in-out infinite;
-    }}
-    .temp {{
-        font-size: 3rem;
-        font-weight: 700;
-        color: {COLOR_TEXTO};
-    }}
-    .estado {{
-        font-size: 1.3rem;
-        color: {COLOR_TEXTO};
-        margin-top: 10px;
-    }}
-    @keyframes fadeIn {{
-        from {{ opacity: 0; transform: translateY(-10px); }}
-        to {{ opacity: 1; transform: translateY(0); }}
-    }}
-    @keyframes floaty {{
-        0% {{ transform: translateY(0px); }}
-        50% {{ transform: translateY(-6px); }}
-        100% {{ transform: translateY(0px); }}
-    }}
+    }
+    @keyframes fadeIn {
+        from {opacity: 0; transform: translateY(-10px);}
+        to {opacity: 1; transform: translateY(0);}
+    }
+    @keyframes float {
+        0%, 100% {transform: translateY(0px);}
+        50% {transform: translateY(-8px);}
+    }
 </style>
 """, unsafe_allow_html=True)
 
-# =============================
+# -----------------------------
 # ENCABEZADO
-# =============================
-col1, col2 = st.columns([1, 5])
-with col1:
-    st.image("logo_bae.png", width=70)
-with col2:
-    st.markdown("<div class='header'>BAE - Monitor del Bebé</div>", unsafe_allow_html=True)
+# -----------------------------
+st.markdown('<div class="title-bae">🍼 BAE - Monitor del Bebé</div>', unsafe_allow_html=True)
+st.markdown('<div class="subtitle-bae">Supervisión ambiental inteligente y visual</div>', unsafe_allow_html=True)
 
-st.markdown("<p style='text-align:center;color:#777;'>Supervisión ambiental inteligente con colores pastel 💛</p>", unsafe_allow_html=True)
+# -----------------------------
+# IMÁGENES DEL BEBÉ
+# -----------------------------
+bebe_frio = Image.open("bebeFrio.png")
+bebe_calor = Image.open("bebeCalor.png")
+bebe_feliz = Image.open("bebeFeliz.png")
 
-# =============================
+# -----------------------------
 # MQTT CONFIG
-# =============================
+# -----------------------------
 broker = "test.mosquitto.org"
 topic = "sensor/temperatura"
 
@@ -91,69 +92,76 @@ def on_message(client, userdata, message):
     except:
         pass
 
-mqtt_client = mqtt.Client(transport="websockets")
+mqtt_client = mqtt.Client()
 mqtt_client.on_message = on_message
 
 try:
-    mqtt_client.ws_set_options(path="/mqtt")
-    mqtt_client.connect(broker, 8081, 60)
+    mqtt_client.connect(broker, 1883, 60)
     mqtt_client.subscribe(topic)
     mqtt_client.loop_start()
 except Exception as e:
-    st.error("❌ No se pudo conectar al broker MQTT (WebSocket).")
+    st.error("❌ No se pudo conectar al broker MQTT (verifica conexión en Wokwi).")
     st.text(str(e))
 
-# =============================
-# FUNCIÓN AUDIO BASE64
-# =============================
-def autoplay_audio(file_path):
-    with open(file_path, "rb") as f:
-        audio_bytes = f.read()
-    base64_audio = base64.b64encode(audio_bytes).decode()
-    audio_html = f"""
-        <audio autoplay>
-        <source src="data:audio/wav;base64,{base64_audio}" type="audio/wav">
-        </audio>
-    """
-    st.markdown(audio_html, unsafe_allow_html=True)
+# -----------------------------
+# OBTENER DATOS DEL SENSOR
+# -----------------------------
+time.sleep(1)
+data = st.session_state.mqtt_data
+temp = data.get("t", 0)
+hum = data.get("h", 0)
 
-# =============================
-# INTERFAZ PRINCIPAL
-# =============================
-placeholder = st.empty()
+# -----------------------------
+# LÓGICA DE ESTADO
+# -----------------------------
+if temp < 18:
+    estado = "Hace frío ❄️"
+    color = "#C6E2E3"
+    img = bebe_frio
+    audio_text = "El cuarto está frío, abriga al bebé."
+elif temp > 28:
+    estado = "Hace calor ☀️"
+    color = "#DD8E6B"
+    img = bebe_calor
+    audio_text = "El cuarto está muy caliente, abre una ventana."
+else:
+    estado = "Temperatura estable 😊"
+    color = "#A3C9A8"
+    img = bebe_feliz
+    audio_text = "El cuarto está perfecto, el bebé está cómodo."
 
-while True:
-    data = st.session_state.mqtt_data
-    temp = data.get("t", 0)
-    hum = data.get("h", 0)
+# -----------------------------
+# TARJETA DE DATOS
+# -----------------------------
+st.markdown(f"""
+    <div class="card" style="border-top: 8px solid {color};">
+        <img src="data:image/png;base64,{base64.b64encode(open(img.filename, "rb").read()).decode()}" width="200">
+        <p class="metric">{temp:.1f} °C</p>
+        <p style="font-size:1.3rem; color:{color}; font-weight:600;">{estado}</p>
+        <p style="color:#6E5849;">Humedad: {hum:.1f}%</p>
+    </div>
+""", unsafe_allow_html=True)
 
-    # Determinar estado
-    if temp < 18:
-        estado = "El cuarto está muy frío ❄️"
-        color = COLOR_AZUL
-        img = "bebeFrio.png"
-        sound = "frio.wav"
-    elif temp > 28:
-        estado = "El cuarto está muy caliente ☀️"
-        color = COLOR_DURAZNO
-        img = "bebeCalor.png"
-        sound = "calor.wav"
-    else:
-        estado = "El ambiente está perfecto 🌤️"
-        color = COLOR_VERDE
-        img = "bebeFeliz.png"
-        sound = "estable.wav"
+# -----------------------------
+# AUDIO DE VOZ
+# -----------------------------
+if st.button("🔊 Escuchar estado"):
+    tts = gTTS(audio_text, lang="es")
+    audio_bytes = io.BytesIO()
+    tts.write_to_fp(audio_bytes)
+    audio_bytes.seek(0)
+    st.audio(audio_bytes, format="audio/mp3")
 
-    with placeholder.container():
-        st.markdown(f"""
-        <div class="status-box" style="background:linear-gradient(145deg, {color}, {COLOR_FONDO});">
-            <img src="{img}" width="250" style="border-radius:20px; margin-bottom:10px;">
-            <div class="temp">{temp:.1f} °C</div>
-            <div class="estado">{estado}</div>
-            <p style="color:#777; font-size:1rem;">Humedad: {hum:.1f}%</p>
-        </div>
-        """, unsafe_allow_html=True)
+# -----------------------------
+# INTERACCIÓN POR VOZ (BETA)
+# -----------------------------
+st.markdown("### 🎤 Prueba de comando de voz")
+st.info("Di: *enciende la luz* o *qué temperatura hay* (requiere micrófono local o simulación)")
 
-        autoplay_audio(sound)
-        time.sleep(6)
+# Aquí podrías integrar `speech_recognition` o un módulo web JS si lo usas localmente
+# En Streamlit Cloud, no se puede acceder directamente al micrófono.
+
+st.markdown("---")
+st.caption("👶 Proyecto BAE — Supervisión ambiental inteligente con MQTT y Streamlit 💛")
+
 
